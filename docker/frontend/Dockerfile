@@ -1,12 +1,14 @@
 FROM node:20-slim
-WORKDIR /src/frontend
+
+WORKDIR /app
+
+ENV NODE_ENV=development
 
 COPY package.json ./
 
-# Vue CLI をグローバル導入（Vite を使いたいなら npm i -g create-vite）
-RUN npm install -g @vue/cli
+RUN npm install
 
-ENV NODE_ENV=development
+COPY . .
 
 # 開発サーバーを自動起動させる ↓↓↓
 CMD ["npm","run","dev","--","--host","0.0.0.0","--port","5173"]
