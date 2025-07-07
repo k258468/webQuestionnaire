@@ -1,21 +1,37 @@
 version: "3.8"
 
 services:
+  # ───────── Frontend (Vite dev) ─────────
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: ../docker/frontend/Dockerfile
+    image: node:20-slim                        # 公式イメージをそのまま利用
+    working_dir: /src/frontend
+    command: >
+      sh -c "
+        npm install &&
+        npm run dev -- --host 0.0.0.0 --port 5173
+      "
     volumes:
-      - ./frontend:/src/frontend        # まだ空。ここに生成物が吐き出される
+      - ./frontend:/src/frontend               # コードを双方向マウント
+      - frontend_node_modules:/src/frontend/node_modules   # 依存をキャッシュ
     ports:
-      - "5173:5173"            # Vite 用。Vue CLI なら 8080:8080 に後で変更
-    tty: true
+      - "5173:5173"
+    environment:
+      - CHOKIDAR_USEPOLLING=true               # Mac / WSL のファイル監視向け
+    tty: true                                   # npm run dev のカラー出力保持
 
+  # ───────── Backend (FastAPI dev) ─────────
   backend:
-    build:
-      context: .
-      dockerfile: docker/backend/Dockerfile
+    image: python:3.10-slim                    # 公式イメージを利用
+    working_dir: /app
+    command: >
+      sh -c "
+        pip install -r requirements.txt &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      "
     volumes:
       - ./backend:/app
     ports:
       - "8000:8000"
+
+volumes:
+  frontend_node_modules:                       # 名前付き volume を宣言
