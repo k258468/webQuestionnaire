@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  frontend:
+    build:
+      context: ./docker/frontend
+      dockerfile: Dockerfile
+    volumes:
+      - ./frontend:/src/frontend        # まだ空。ここに生成物が吐き出される
+    ports:
+      - "5173:5173"            # Vite 用。Vue CLI なら 8080:8080 に後で変更
+    tty: true
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"

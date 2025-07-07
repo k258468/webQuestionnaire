@@ -1,0 +1,33 @@
+# ── Node / Vue (frontend) ───────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.eslintcache
+frontend/.cache/
+# Vite/TypeScript 生成物
+frontend/coverage/
+frontend/*.log
+
+# ── Python / FastAPI (backend) ─────────────────────────────────────
+backend/__pycache__/
+backend/**/*.py[cod]
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.venv/
+backend/venv/
+backend/env/
+
+# ── Docker & OS 雑多 ───────────────────────────────────────────────
+*.log
+tmp/
+*.pid
+
+# ── 環境ファイル・機密情報 ────────────────────────────────────────
+*.env
+.env.*
+.envrc
+
+# ── エディタ/OS メタデータ ────────────────────────────────────────
+.idea/
+.vscode/
+.DS_Store
