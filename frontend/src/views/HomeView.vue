@@ -2,7 +2,17 @@
   <div>
     <ServiceIntro v-if="step === 1" @next="step++" />
     <UserTypeSelect v-else-if="step === 2" @selected="onUserSelected" />
-    <SurveyForm v-else-if="step === 3" :userType="userType" @submitted="onSubmitted" />
+    
+    <!-- ↓ userType でアンケートを切替 -->
+   <TeacherSurveyForm
+     v-else-if="step === 3 && userType==='teacher'"
+     @submitted="onSubmitted"
+   />
+   <StudentSurveyForm
+     v-else-if="step === 3 && userType==='student'"
+     @submitted="onSubmitted"
+   />
+
     <button class="admin-btn" @click="openAdmin">
       管理者
     </button>
@@ -14,16 +24,18 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import ServiceIntro from '../components/ServiceIntro.vue';
 import UserTypeSelect from '../components/UserTypeSelect.vue';
-import SurveyForm from '../components/SurveyForm.vue';
+import TeacherSurveyForm from '../components/TeacherSurveyForm.vue';
+import StudentSurveyForm from '../components/StudentSurveyForm.vue';
+
 
 const step = ref(1);
-const userType = ref('');
+const userType  = ref<'teacher' | 'student' | ''>('');
 const router = useRouter();
 
 /* ----- ユーザー種別選択後 ----- */
-function onUserSelected(type: string) {
+function onUserSelected(type: 'teacher' | 'student') {
   userType.value = type;
-  step.value++;
+  step.value = 3;
 }
 
 /* ----- アンケート送信完了 ----- */

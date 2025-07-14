@@ -32,5 +32,3 @@ tmp/
 .vscode/
 .DS_Store
 
-backend/app/data
-
