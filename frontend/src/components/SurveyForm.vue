@@ -2,21 +2,21 @@
   <form @submit.prevent="submitForm">
     <p>アンケート対象：{{ userType === 'teacher' ? '教師' : '学生' }}</p>
     <div>
-      <label>お名前:</label>
+      <label>学籍番号(通常記入の例):</label>
       <input v-model="name" required />
     </div>
     <div>
-      <label>年齢:</label>
+      <label>年齢(数字記入の例):</label>
       <input v-model="age" type="number" required />
     </div>
     <div>
-      <label>ご意見:</label>
+      <label>ご意見(自由記述の例):</label>
       <textarea v-model="feedback" required></textarea>
     </div>
 
     <!-- 単一選択チェックボックス(性別) -->
     <div>
-      <label>性別（1つだけ選択してください）:</label>
+      <label>性別（1つだけ選択する場合の例）:</label>
       <div v-for="option in genderOptions" :key="option.value">
         <input
           type="checkbox"
@@ -30,7 +30,7 @@
 
     <!-- 複数選択チェックボックス(興味のある分野) -->
     <div>
-      <label>興味のある分野（複数選択可）:</label>
+      <label>興味のある分野（複数選択する場合の例）:</label>
       <div v-for="option in interestOptions" :key="option.value">
         <input
           type="checkbox"
