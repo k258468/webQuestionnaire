@@ -31,3 +31,5 @@ npm run dev
 ```sh
 npm run build
 ```
+docker composed up
+docker composed down
