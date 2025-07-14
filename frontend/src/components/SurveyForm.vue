@@ -7,7 +7,7 @@
     </div>
     <div>
       <label>年齢(数字記入の例):</label>
-      <input v-model="age" type="number" required />
+      <input v-model.number="age" type="number" required />
     </div>
     <div>
       <label>ご意見(自由記述の例):</label>
@@ -47,6 +47,8 @@
 
 <script lang="ts" setup>
 import { ref } from 'vue';
+import axios from 'axios';
+
 const props = defineProps<{ userType: string }>();
 
 const name = ref('');
@@ -81,9 +83,9 @@ const selectSingleCheckbox = (selected: string) => {
 
 const emit = defineEmits(['submitted']);
 
-//名前、年齢、意見の警告は直接HTML上で指定されている。性別と興味はvue使ってる。
-const submitForm = () => {
-  if (!gender.value) { //警告
+const submitForm = async () => {
+  // 性別と興味のある分野のバリデーション
+  if (!gender.value) {
     alert('性別を1つ選択してください。');
     return;
   }
@@ -93,22 +95,22 @@ const submitForm = () => {
     return;
   }
 
-  console.log('送信内容:', {
-    name: name.value,
-    age: age.value,
-    feedback: feedback.value,
-    userType: props.userType,
-    gender: gender.value,
-    interests: interests.value,
-  });
-  emit('submitted', {
-    name: name.value,
-    age: age.value,
-    feedback: feedback.value,
-    userType: props.userType,
-    gender: gender.value,
-    interests: interests.value,
-  });
+  try {
+    await axios.post('http://localhost:8000/api/survey', {
+      name: name.value,
+      age: age.value,
+      feedback: feedback.value,
+      userType: props.userType,
+      gender: gender.value,
+      interests: interests.value,
+    });
+    emit('submitted');
+  } catch (error) {
+    alert('送信に失敗しました。時間を置いて再度お試しください。');
+    console.error(error);
+  }
 };
 </script>
+
+
 
