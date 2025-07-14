@@ -1,25 +1,19 @@
 <template>
   <form @submit.prevent="submitForm">
-    <p>アンケート対象：{{ userType === 'teacher' ? '教師' : '学生' }}</p>
-
-    <div>
-      <label>学籍番号:</label>
-      <input v-model="name" required />
-    </div>
+    <!-- 共通フィールド -->
+    
 
     <div>
       <label>年齢:</label>
       <input v-model.number="age" type="number" required />
     </div>
 
-    <div>
-      <label>ご意見:</label>
-      <textarea v-model="feedback" required></textarea>
-    </div>
+    <!-- slot がフォームの中にある！ -->
+    <slot></slot>
 
-    <!-- 単一選択チェックボックス(性別) -->
+    <!-- 共通部分 -->
     <div>
-      <label>性別（1つ選択）:</label>
+      <label>性別(1つ選択):</label>
       <div v-for="opt in genderOptions" :key="opt.value">
         <input
           type="checkbox"
@@ -31,11 +25,14 @@
       </div>
     </div>
 
-    <!-- 複数選択チェックボックス(興味分野) -->
     <div>
-      <label>興味のある分野（複数可）:</label>
+      <label>興味のある分野(複数選択可):</label>
       <div v-for="opt in interestOptions" :key="opt.value">
-        <input type="checkbox" :value="opt.value" v-model="interests" />
+        <input
+          type="checkbox"
+          :value="opt.value"
+          v-model="interests"
+        />
         {{ opt.label }}
       </div>
     </div>
@@ -45,6 +42,7 @@
     </button>
   </form>
 </template>
+
 
 <script lang="ts" setup>
 import { ref } from 'vue';
