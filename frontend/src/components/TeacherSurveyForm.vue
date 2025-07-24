@@ -1,6 +1,12 @@
 <template>
-  <SurveyShell @submitted="emit('submitted')" :userType="'teacher'">
-    <!-- ★ ここに教師専用の質問だけを書く -->
+  <SurveyShell 
+    :userType="'teacher'" 
+    :subject="subject" 
+    :years="years" 
+    @update:subject="val => subject = val" 
+    @update:years="val => years = val" 
+    @submitted="emit('submitted')"
+  >
     <div>
       <label>担当科目:</label>
       <input v-model="subject" required />
@@ -14,9 +20,10 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import SurveyShell from './SurveyShell.vue';  // 汎用フォーム枠
+import SurveyShell from './SurveyShell.vue';
 
 const emit = defineEmits(['submitted']);
 const subject = ref('');
-const years   = ref<number | null>(null);
+const years = ref<number | null>(null);
 </script>
+
