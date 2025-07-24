@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
 import csv, os, pathlib
 
 app = FastAPI()
@@ -10,6 +11,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# staticディレクトリを公開
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 DATA_DIR = pathlib.Path(__file__).parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
