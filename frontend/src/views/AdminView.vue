@@ -7,6 +7,11 @@
       <option value="teacher">教師</option>
     </select>
 
+     <!-- グラフ画像の表示 -->
+    <div style="margin: 1rem 0;">
+      <img :src="chartImageUrl" alt="アンケートグラフ" width="600" v-if="chartImageUrl" />
+    </div>
+
     <table v-if="rows.length">
       <thead>
         <tr><th v-for="h in headers" :key="h">{{ h }}</th></tr>
@@ -24,7 +29,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 
@@ -36,6 +41,11 @@ const rows = ref<any[]>([]);
 const headers = ref<string[]>([]);
 
 const tabLabel = computed(() => tab.value === 'student' ? '学生' : '教師');
+
+// 画像URL（タブに応じて切り替える）
+const chartImageUrl = computed(() => {
+  return `http://localhost:8000/static/admin/chart_${tab.value}.png?${Date.now()}`;
+});
 
 async function load() {
   try {
@@ -51,4 +61,5 @@ async function load() {
 }
 
 onMounted(load);
+watch(tab, load);
 </script>
