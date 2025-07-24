@@ -1,212 +1,240 @@
 <template>
-  <form @submit.prevent="submitForm">
-    <!-- 共通フィールド -->
-    <div>
-      <label>年齢:</label>
-      <input v-model.number="age" type="number" required />
-    </div>
+  <v-container class="py-8">
+    <v-row justify="center">
+      <v-col cols="12" sm="10" md="8" lg="6">
+        <v-card elevation="2">
+          <v-card-title class="text-h6 font-weight-bold">
+            アンケート
+          </v-card-title>
 
-    <!-- 学生用の質問 -->
-    <div v-if="userType === 'student'">
-      <div>
-        <label>学籍番号:</label>
-        <input v-model="studentId" required />
-      </div>
-      <div>
-        <label>学年:</label>
-        <select v-model="grade" required>
-          <option value="" disabled>選択してください</option>
-          <option value="1">1年</option>
-          <option value="2">2年</option>
-          <option value="3">3年</option>
-          <option value="4">4年</option>
-        </select>
-      </div>
-    </div>
+          <v-card-text>
+            <v-form ref="form" @submit.prevent="submitForm">
+              <!-- 共通フィールド -->
+              <v-text-field
+                v-model.number="age"
+                label="年齢"
+                type="number"
+                variant="outlined"
+                density="comfortable"
+                :rules="[required, isPositiveInt]"
+                prepend-icon="mdi-numeric"
+                class="mb-4"
+                required
+              />
 
-    <!-- 教師用の質問 -->
-    <div v-else-if="userType === 'teacher'">
-      <div>
-        <label>担当科目:</label>
-        <input v-model="subject" required />
-      </div>
-      <div>
-        <label>教歴（年数）:</label>
-        <input v-model.number="experience" type="number" required />
-      </div>
-    </div>
+              <v-radio-group
+                v-model="gender"
+                :rules="[required]"
+                label="性別（1つ選択）"
+                inline
+                class="mb-4"
+              >
+                <v-radio
+                  v-for="opt in genderOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </v-radio-group>
 
-    <!-- 性別 -->
-    <div>
-      <label>性別(1つ選択):</label>
-      <div v-for="opt in genderOptions" :key="opt.value">
-        <input
-          type="checkbox"
-          :value="opt.value"
-          :checked="gender === opt.value"
-          @change="selectSingleCheckbox(opt.value)"
-        />
-        {{ opt.label }}
-      </div>
-    </div>
+              <v-combobox
+                v-model="interests"
+                :items="interestOptions"
+                item-title="label"
+                item-value="value"
+                :return-object="false"
+                label="興味のある分野（複数選択可）"
+                multiple
+                chips
+                closable-chips
+                variant="outlined"
+                density="comfortable"
+                :rules="[minOne]"
+                class="mb-6"
+              />
 
-    <!-- 興味のある分野 -->
-    <div>
-      <label>興味のある分野(複数選択可):</label>
-      <div v-for="opt in interestOptions" :key="opt.value">
-        <input
-          type="checkbox"
-          :value="opt.value"
-          v-model="interests"
-        />
-        {{ opt.label }}
-      </div>
-    </div>
+              <!-- 学生 / 教師 固有フィールド（子側で描画） -->
+              <slot />
 
-    <button type="submit" :disabled="loading">
-      {{ loading ? '送信中...' : '送信' }}
-    </button>
-  </form>
+              <v-btn
+                type="submit"
+                color="primary"
+                block
+                :loading="loading"
+                :disabled="loading"
+              >
+                送信
+              </v-btn>
+            </v-form>
+          </v-card-text>
+        </v-card>
+      </v-col>
+    </v-row>
+  </v-container>
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue';
-import axios from 'axios';
+import { ref, watch } from 'vue'
+import type { VForm } from 'vuetify/components'
+import axios, { isAxiosError } from 'axios'
 
-const props = defineProps<{ userType: 'student' | 'teacher' }>();
-const emit = defineEmits(['submitted']);
+type UserType = 'student' | 'teacher'
+type Gender = 'male' | 'female' | 'other'
+type Interest = 'it' | 'sports' | 'music' | 'travel'
 
-/* 共通フォーム状態 */
-const age = ref<number | null>(null);
-const gender = ref<string | null>(null);
-const interests = ref<string[]>([]);
-const loading = ref(false);
+type StudentPayload = {
+  student_id: string
+  age: number
+  grade: string            // ★ サーバは string を要求
+  gender: Gender
+  interests: string[]      // ★ 文字列配列
+}
 
-/* 個別フォーム状態 */
-const studentId = ref('');
-const grade = ref('');
-const subject = ref('');
-const experience = ref<number | null>(null);
+type TeacherPayload = {
+  age: number
+  subject: string
+  experience: number       // サーバが experience を期待している想定
+  gender: Gender
+  interests: string[]
+}
 
-/* 選択肢 */
+const props = defineProps<{
+  userType: UserType
+
+  // Student 用（v-model:name / v-model:grade）
+  name?: string
+  grade?: number | null
+
+  // Teacher 用（v-model:subject / v-model:years）
+  subject?: string
+  years?: number | null
+}>()
+
+const emit = defineEmits<{
+  (e: 'submitted'): void
+  (e: 'update:name', v: string): void
+  (e: 'update:grade', v: number | null): void
+  (e: 'update:subject', v: string): void
+  (e: 'update:years', v: number | null): void
+}>()
+
+/** v-form */
+const form = ref<VForm | null>(null)
+
+/** 共通フォーム状態 */
+const age = ref<number | null>(null)
+const gender = ref<Gender | null>(null)
+const interests = ref<(Interest | string)[]>([]) // combobox からは string が返る想定だが保険で union
+const loading = ref(false)
+
+/** 選択肢（共通） */
 const genderOptions = [
   { value: 'male', label: '男性' },
   { value: 'female', label: '女性' },
-  { value: 'other', label: 'その他' },
-];
+  { value: 'other', label: 'その他' }
+] as const
+
 const interestOptions = [
   { value: 'it', label: 'IT' },
   { value: 'sports', label: 'スポーツ' },
   { value: 'music', label: '音楽' },
-  { value: 'travel', label: '旅行' },
-];
+  { value: 'travel', label: '旅行' }
+] as const
 
-function selectSingleCheckbox(val: string) {
-  gender.value = gender.value === val ? null : val;
-}
+/** ルール */
+const required = (v: unknown) =>
+  (v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)) || '必須項目です'
 
-const API_BASE =
-  import.meta.env.VITE_API_URL ||
-  `${window.location.protocol}//${window.location.hostname}:8000`;
+const minOne = (v: unknown) =>
+  (Array.isArray(v) && v.length > 0) || '少なくとも1つ選択してください'
 
-async function submitForm() {
-  if (age.value === null) {
-    alert('年齢を入力してください。');
-    return;
+const isPositiveInt = (v: unknown) =>
+  (typeof v === 'number' && Number.isInteger(v) && v > 0) || '正の整数を入力してください'
+
+/** API ベース URL */
+const API_BASE: string =
+  import.meta.env.VITE_API_URL ??
+  `${window.location.protocol}//${window.location.hostname}:8000`
+
+async function submitForm(e?: Event) {
+  e?.preventDefault()
+  console.log('[submit] called')
+
+  const result = await form.value?.validate()
+  console.log('[submit] validate:', result)
+  if (!result?.valid) return
+
+  // interests を必ず string[] へ
+  const interestsForApi = interests.value.map(i => String(i))
+
+  // props の必須値チェック
+  if (props.userType === 'student') {
+    if (!props.name || props.grade == null) {
+      console.warn('[submit] missing student props', { name: props.name, grade: props.grade })
+      return
+    }
+  } else {
+    if (!props.subject || props.years == null) {
+      console.warn('[submit] missing teacher props', { subject: props.subject, years: props.years })
+      return
+    }
   }
-  if (!gender.value) {
-    alert('性別を1つ選択してください。');
-    return;
-  }
-  if (interests.value.length === 0) {
-    alert('興味のある分野を少なくとも1つ選択してください。');
-    return;
+  if (age.value == null || !gender.value || interestsForApi.length === 0) {
+    console.warn('[submit] missing common', { age: age.value, gender: gender.value, interestsForApi })
+    return
   }
 
-  loading.value = true;
-
+  loading.value = true
   try {
-    let payload: any;
-    let endpoint: string;
+    let endpoint = ''
+    let payload: StudentPayload | TeacherPayload
 
     if (props.userType === 'student') {
-      if (!studentId.value) {
-        alert('学籍番号を入力してください。');
-        loading.value = false;
-        return;
-      }
-      if (!grade.value) {
-        alert('学年を選択してください。');
-        loading.value = false;
-        return;
-      }
-
-      endpoint = `${API_BASE}/api/survey/student`;
       payload = {
-        student_id: studentId.value,
-        age: age.value,
-        grade: grade.value,
-        gender: gender.value,
-        interests: interests.value,
-      };
+        student_id: props.name!,
+        age: age.value!,
+        grade: String(props.grade!),              // ★ 文字列化
+        gender: gender.value!,
+        interests: interestsForApi,
+      }
+      endpoint = `${API_BASE}/api/survey/student`
     } else {
-      // teacher
-      if (!subject.value) {
-        alert('担当科目を入力してください。');
-        loading.value = false;
-        return;
-      }
-      if (experience.value === null) {
-        alert('教歴（年数）を入力してください。');
-        loading.value = false;
-        return;
-      }
-
-      endpoint = `${API_BASE}/api/survey/teacher`;
       payload = {
-        age: age.value,
-        subject: subject.value,
-        experience: experience.value,
-        gender: gender.value,
-        interests: interests.value,
-      };
+        age: age.value!,
+        subject: props.subject!,
+        experience: props.years!,                 // ★ サーバ仕様に合わせる
+        gender: gender.value!,
+        interests: interestsForApi,
+      }
+      endpoint = `${API_BASE}/api/survey/teacher`
     }
 
-    await axios.post(endpoint, payload);
+    console.log('[submit] endpoint:', endpoint)
+    console.log('[submit] payload:', payload)
 
-    // フォームリセット
-    studentId.value = '';
-    grade.value = '';
-    subject.value = '';
-    experience.value = null;
-    age.value = null;
-    gender.value = null;
-    interests.value = [];
+    const res = await axios.post(endpoint, payload)
+    console.log('[submit] response:', res.status, res.data)
 
-    emit('submitted');
+    form.value?.resetValidation()
+    emit('submitted')
   } catch (err) {
-    console.error('送信エラー:', err);
-    alert('送信に失敗しました。時間を置いて再度お試しください。');
+    if (isAxiosError(err)) {
+      console.error('[submit] axios error status:', err.response?.status)
+      console.error('[submit] axios error data  :', err.response?.data)
+      const d = err.response?.data as any
+      if (d?.detail) console.table(d.detail)
+    } else {
+      console.error('[submit] error:', err)
+    }
   } finally {
-    loading.value = false;
+    loading.value = false
   }
 }
+
+/** userType 切替時に古いバリデーションを消す */
+watch(
+  () => props.userType,
+  () => form.value?.resetValidation()
+)
 </script>
-
-<style scoped>
-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  max-width: 420px;
-}
-
-button[disabled] {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-</style>
-
-
-
 

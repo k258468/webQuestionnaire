@@ -1,39 +1,55 @@
+<!-- ============================================== -->
+<!-- src/views/CompletionView.vue                    -->
+<!-- emit ベースで親に遷移を委ねても良いですが、       -->
+<!-- ここでは単純に RouterLink にしてもOK。           -->
+<!-- ============================================== -->
 <template>
-  <div class="thanks">
-    <h2>ご協力ありがとうございました！</h2>
-    <p>アンケートは正常に送信されました。</p>
+  <v-container class="py-12">
+    <v-row justify="center">
+      <v-col cols="12" sm="10" md="8" lg="6">
+        <v-card elevation="2" class="text-center py-8">
+          <v-card-title class="text-h5 font-weight-bold mb-2">
+            ご協力ありがとうございました！
+          </v-card-title>
 
-    <router-link class="top-link" to="/">トップへ戻る</router-link>
+          <v-card-text class="mb-6">
+            アンケートは正常に送信されました。
+          </v-card-text>
 
-    <!-- 管理者ボタン -->
-    <button class="admin-btn" @click="openAdmin">
-      管理者
-    </button>
+          <v-card-actions class="flex-column gap-3">
+            <v-btn
+              color="primary"
+              block
+              prepend-icon="mdi-home"
+              :to="{ name: 'Home' }"
+            >
+              トップへ戻る
+            </v-btn>
 
-  </div>
+            <v-btn
+              color="secondary"
+              variant="tonal"
+              block
+              prepend-icon="mdi-shield-account"
+              @click="onAdmin"
+            >
+              管理者
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-col>
+    </v-row>
+  </v-container>
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router';
+import { useRouter } from 'vue-router'
+const router = useRouter()
 
-const router = useRouter();
-
-function openAdmin() {
-  const pwd = prompt('管理者パスワードを入力してください');
+function onAdmin() {
+  const pwd = window.prompt('管理者パスワードを入力してください')
   if (pwd) {
-    router.push({ name: 'Admin', query: { pwd } });
+    router.push({ name: 'Admin', query: { pwd } })
   }
 }
 </script>
-
-<style scoped>
-.thanks { text-align: center; margin-top: 3rem; }
-.top-link { display: inline-block; margin-top: 1rem; }
-.admin-btn {
-  margin-top: 2rem;
-  padding: 0.5rem 1rem;
-  background: #444;
-  color: #fff;
-  border-radius: 4px;
-}
-</style>

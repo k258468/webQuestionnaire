@@ -1,54 +1,102 @@
+<!-- ============================================== -->
+<!-- src/views/AdminView.vue                         -->
+<!-- Vuetify での閲覧画面（タブ + data-table）        -->
+<!-- ============================================== -->
 <template>
-  <div>
-    <h2>アンケート結果（{{ tabLabel }}）</h2>
+  <v-container class="py-8">
+    <v-row justify="center">
+      <v-col cols="12" md="10" lg="8">
+        <v-card elevation="2">
+          <v-card-title class="text-h6 font-weight-bold">
+            アンケート結果（{{ tabLabel }}）
+          </v-card-title>
 
-    <select v-model="tab" @change="load">
-      <option value="student">学生</option>
-      <option value="teacher">教師</option>
-    </select>
+          <v-card-text>
+            <v-tabs v-model="tab" class="mb-4">
+              <v-tab value="student">学生</v-tab>
+              <v-tab value="teacher">教師</v-tab>
+            </v-tabs>
 
-    <table v-if="rows.length">
-      <thead>
-        <tr><th v-for="h in headers" :key="h">{{ h }}</th></tr>
-      </thead>
-      <tbody>
-        <tr v-for="(r,i) in rows" :key="i">
-          <td v-for="h in headers" :key="h">{{ r[h] }}</td>
-        </tr>
-      </tbody>
-    </table>
+            <v-alert
+              v-if="error"
+              type="error"
+              variant="tonal"
+              class="mb-4"
+            >
+              認証失敗またはデータ取得失敗
+            </v-alert>
 
-    <p v-else>データがありません</p>
-    <router-link to="/">トップへ戻る</router-link>
-  </div>
+            <v-data-table
+              :headers="headers"
+              :items="rows"
+              :loading="loading"
+              loading-text="読み込み中..."
+              class="elevation-1"
+              density="comfortable"
+            >
+              <template #no-data>
+                データがありません
+              </template>
+            </v-data-table>
+          </v-card-text>
+
+          <v-card-actions>
+            <v-spacer />
+            <v-btn color="primary" prepend-icon="mdi-home" :to="{ name: 'Home' }">
+              トップへ戻る
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-col>
+    </v-row>
+  </v-container>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { useRoute } from 'vue-router';
-import axios from 'axios';
+import { ref, onMounted, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import axios from 'axios'
 
-const route = useRoute();
-const pwd = route.query.pwd as string || '';
+type Tab = 'student' | 'teacher'
+type Header = { title: string; key: string }
 
-const tab = ref<'student'|'teacher'>('student');
-const rows = ref<any[]>([]);
-const headers = ref<string[]>([]);
+const route = useRoute()
+const pwd = (route.query.pwd as string) || ''
 
-const tabLabel = computed(() => tab.value === 'student' ? '学生' : '教師');
+const tab = ref<Tab>('student')
+const rows = ref<Record<string, unknown>[]>([])
+const headers = ref<Header[]>([])
+const loading = ref(false)
+const error = ref<string | null>(null)
+
+const tabLabel = computed(() => (tab.value === 'student' ? '学生' : '教師'))
+
+const API_BASE: string =
+  import.meta.env.VITE_API_URL ??
+  `${window.location.protocol}//${window.location.hostname}:8000`
 
 async function load() {
+  loading.value = true
+  error.value = null
   try {
-    const { data } = await axios.get(`http://localhost:8000/api/results/${tab.value}`, {
-      params: { pwd },
-    });
-    rows.value = data;
-    headers.value = data.length ? Object.keys(data[0]) : [];
+    const { data } = await axios.get(
+      `${API_BASE}/api/results/${tab.value}`,
+      { params: { pwd } }
+    )
+
+    rows.value = Array.isArray(data) ? data : []
+    headers.value = rows.value.length
+      ? Object.keys(rows.value[0]).map((k) => ({ title: k, key: k }))
+      : []
   } catch (e) {
-    alert('認証失敗またはデータ取得失敗');
-    rows.value = [];
+    error.value = 'fetch_failed'
+    rows.value = []
+    headers.value = []
+  } finally {
+    loading.value = false
   }
 }
 
-onMounted(load);
+onMounted(load)
+watch(tab, load)
 </script>
