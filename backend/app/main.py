@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import csv, os, pathlib
 
 app = FastAPI()
@@ -15,21 +15,25 @@ DATA_DIR = pathlib.Path(__file__).parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
 # -------------------------
-# モデル定義（個別に分ける）
+# モデル定義
 # -------------------------
 class StudentSurvey(BaseModel):
-    student_id: str
-    age: int
-    grade: str
-    gender: str
-    interests: list[str]
+    q1_use: str
+    q2_value: str
+    q3_accept: str
+    q4_feel: str
+    q4_detail: str | None = ''
+    q5_motive: str
 
 class TeacherSurvey(BaseModel):
-    age: int
-    subject: str
-    experience: int
-    gender: str
-    interests: list[str]
+    q1_method:  list[str] = Field(..., description="学習把握方法")
+    q2_value:   str       = Field(..., description="早期支援の価値（5段階）")
+    q2_notify:  list[str] = Field(..., description="希望する通知情報")
+    q3_value:   str       = Field(..., description="講義改善の価値（5段階）")
+    q3_feedback:list[str] = Field(..., description="望ましいフィードバック形式")
+    q4_concern:list[str] = Field(..., description="導入懸念")
+    q5_value:   str       = Field(..., description="総合評価（5段階）")
+    q5_free:    str       = Field('', description="自由記述")
 
 # -------------------------
 # ファイルパス
@@ -48,15 +52,19 @@ async def save_student(data: StudentSurvey):
     first = not path.exists()
 
     with open(path, "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        if first:
-            writer.writerow(["student_id", "age", "grade", "gender", "interests"])
-        writer.writerow([
-            data.student_id,
-            data.age,
-            data.grade,
-            data.gender,
-            ";".join(data.interests)
+        w = csv.writer(f)
+        if first:          # ヘッダ行
+            w.writerow([
+                "q1_use", "q2_value", "q3_accept",
+                "q4_feel", "q4_detail", "q5_motive"
+            ])
+        w.writerow([
+            data.q1_use,
+            data.q2_value,
+            data.q3_accept,
+            data.q4_feel,
+            data.q4_detail.replace("\n", " "),
+            data.q5_motive,
         ])
     return {"message": "student saved"}
 
@@ -69,15 +77,22 @@ async def save_teacher(data: TeacherSurvey):
     first = not path.exists()
 
     with open(path, "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
+        w = csv.writer(f)
         if first:
-            writer.writerow(["age", "subject", "experience", "gender", "interests"])
-        writer.writerow([
-            data.age,
-            data.subject,
-            data.experience,
-            data.gender,
-            ";".join(data.interests)
+            w.writerow([
+                "q1_method", "q2_value", "q2_notify",
+                "q3_value", "q3_feedback",
+                "q4_concern", "q5_value", "q5_free"
+            ])
+        w.writerow([
+            ";".join(data.q1_method),
+            data.q2_value,
+            ";".join(data.q2_notify),
+            data.q3_value,
+            ";".join(data.q3_feedback),
+            ";".join(data.q4_concern),
+            data.q5_value,
+            data.q5_free.replace("\n", " "),
         ])
     return {"message": "teacher saved"}
 
@@ -99,5 +114,3 @@ async def get_results(user_type: str, pwd: str):
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         return list(reader)
-
-
