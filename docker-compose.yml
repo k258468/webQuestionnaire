@@ -1,43 +1,34 @@
 version: "3.8"
-
 services:
-  # ───────── Frontend (Vite dev) ─────────
   frontend:
-    image: node:20-slim                        # 公式イメージをそのまま利用
+    image: node:20-slim
     working_dir: /src/frontend
     command: >
-      sh -c "
-        npm install &&
-        npm run dev -- --host 0.0.0.0 --port 5173
-      "
+      sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
     volumes:
-      - ./frontend:/src/frontend               # コードを双方向マウント
-      - frontend_node_modules:/src/frontend/node_modules   # 依存をキャッシュ
+      - ./frontend:/src/frontend
+      - frontend_node_modules:/src/frontend/node_modules
     ports:
       - "5173:5173"
     environment:
-      - CHOKIDAR_USEPOLLING=true               # Mac / WSL のファイル監視向け
-      
-      - VITE_API_URL=http://localhost:8000     
-    tty: true                                   # npm run dev のカラー出力保持
+      - CHOKIDAR_USEPOLLING=true
+      - VITE_API_URL=http://localhost:8000
+    tty: true
 
-  # ───────── Backend (FastAPI dev) ─────────
   backend:
-    image: python:3.10-slim                    # 公式イメージを利用
+    build:                               # ← ここを image の代わりに使う
+      context: .                         # リポジトリのルート
+      dockerfile: docker/backend/Dockerfile
     working_dir: /app
     command: >
-      sh -c "
-        pip install -r requirements.txt &&
-        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-      "
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
-      - ./backend:/app
+      - ./backend:/app                   # ソースをマウント（フォントはイメージ側にあるのでOK）
     ports:
       - "8000:8000"
-
     environment:
-     
-      - ADMIN_PASSWORD=1234  # 管理画面で使うパスワードを環境変数に
+      - ADMIN_PASSWORD=1234
+      - MPLBACKEND=Agg                   # 念のため
 
 volumes:
-  frontend_node_modules:                       # 名前付き volume を宣言
+  frontend_node_modules:

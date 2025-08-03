@@ -1,10 +1,12 @@
-# app/main.py
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import List, Literal
-import csv, os, pathlib
+from typing import List, Optional
+import csv, os
+from pathlib import Path
+
+from .charts import rebuild_all  # ← グラフ再生成
 
 app = FastAPI()
 
@@ -13,11 +15,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"],  # 'X-Admin-Pwd' も含む
 )
 
 # ─────────── Static 配信 ───────────
-BASE_DIR   = pathlib.Path(__file__).parent
+BASE_DIR   = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -31,7 +33,7 @@ CSV_FILES = {
     "teacher": DATA_DIR / "teacher_results.csv",
 }
 
-# ★ 新しい日本語ヘッダー（列順も固定）
+# ヘッダ（日本語固定）
 STUDENT_HEADERS = ["学年", "活用意向", "懸念（複数）", "対策の受容"]
 TEACHER_HEADERS = [
     "把握の有無","把握手段","活用方法","確認意向",
@@ -39,31 +41,23 @@ TEACHER_HEADERS = [
     "利点","懸念","導入意向","導入しない理由",
 ]
 
-# ───────── 起動時に旧CSVを削除 ─────────
-# @app.on_event("startup")
-# def _reset_csv_on_start():
-#     # 必要に応じてコメントアウトしてください
-#     for p in CSV_FILES.values():
-#         if p.exists():
-#             p.unlink()
-
 # ─────────── リクエストモデル ───────────
 class StudentSurvey(BaseModel):
-    grade: Literal['B1','B2','B3','B4','M1','M2','D1','D2','D3']
-    s1_want_check: Literal['思う', '思わない']
-    s2_concern:    List[str]
-    s3_happy:      Literal['はい', 'いいえ']
+    grade: str                       # 例: B1/B2/B3/B4/M1/M2/D1...
+    s1_want_check: str               # 思う / 思わない
+    s2_concern:    List[str]         # ; で連結保存
+    s3_happy:      str               # はい / いいえ
 
 class TeacherSurvey(BaseModel):
-    q1_check: Literal['している', 'していない']
+    q1_check: str                    # している / していない
     q11_how: List[str] = []
     q12_use: List[str] = []
-    q21_want: Literal['したい', 'したくない', ''] | None = None
+    q21_want: Optional[str] = None   # したい / したくない / None
     q211_reason: List[str] = []
     q212_reason_free: str = ''
     q2_advantage: List[str]
     q3_concern:   List[str]
-    q4_use:       Literal['思う', '思わない']
+    q4_use:       str                # 思う / 思わない
     q4_use_reason: str = ''
 
 # ─────────── 学生 保存 ───────────
@@ -108,18 +102,15 @@ async def save_teacher(data: TeacherSurvey):
         w.writerow([row[h] for h in TEACHER_HEADERS])
     return {"message": "teacher saved"}
 
-# ─────────── 管理取得（ヘッダー認証）───────────
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "secret")
+# ─────────── 管理用（結果取得／ヘッダー認証）───────────
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "1234")
 
 def verify_pwd(pwd: str):
     if (pwd or "").strip() != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 @app.get("/api/results/{user_type}")
-async def get_results(
-    user_type: str,
-    x_admin_pwd: str = Header(..., alias="X-Admin-Pwd")
-):
+async def get_results(user_type: str, x_admin_pwd: str = Header(..., alias="X-Admin-Pwd")):
     verify_pwd(x_admin_pwd)
     path = CSV_FILES.get(user_type)
     if not path or not path.exists():
@@ -128,13 +119,21 @@ async def get_results(
         reader = csv.DictReader(f)
         return list(reader)
 
-# ─────────── 画像一覧（任意）───────────
+# ─────────── グラフ再生成（ヘッダー認証）───────────
+@app.post("/api/charts/rebuild")
+async def charts_rebuild(x_admin_pwd: str = Header(..., alias="X-Admin-Pwd")):
+    verify_pwd(x_admin_pwd)
+    meta = rebuild_all()  # 画像生成（タイトルなし）
+    return meta
+
+# ─────────── static 画像一覧（再帰）───────────
 @app.get("/api/images", response_model=List[str])
 async def list_images() -> List[str]:
     exts = {".png", ".jpg", ".jpeg"}
-    images: List[str] = [
-        str(f.relative_to(STATIC_DIR)).replace("\\", "/")
-        for f in STATIC_DIR.rglob("*")
-        if f.is_file() and f.suffix.lower() in exts
+    files: List[str] = [
+        str(p.relative_to(STATIC_DIR)).replace("\\", "/")
+        for p in STATIC_DIR.rglob("*")
+        if p.is_file() and p.suffix.lower() in exts
     ]
-    return images
+    files.sort()
+    return files

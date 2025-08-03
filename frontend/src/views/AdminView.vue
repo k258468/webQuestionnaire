@@ -1,92 +1,73 @@
-<!-- src/views/AdminView.vue -->
 <template>
   <v-container class="py-8">
     <v-row justify="center">
       <v-col cols="12" md="10" lg="8">
         <v-card elevation="2">
-          <v-card-title class="text-h6 font-weight-bold">
-            アンケート結果（{{ tabLabel }}）
+          <!-- タイトル + 再生成ボタン -->
+          <v-card-title class="d-flex align-center justify-space-between">
+            <span class="text-h6 font-weight-bold">
+              アンケート結果（{{ tabLabel }}）
+            </span>
+
+            <div class="d-flex align-center ga-2">
+              <v-btn
+                size="small"
+                color="primary"
+                prepend-icon="mdi-cog-refresh"
+                :loading="rebuilding"
+                @click="rebuildCharts"
+              >
+                グラフ再生成
+              </v-btn>
+            </div>
           </v-card-title>
 
           <v-card-text>
-            <!-- ─── タブ ─── -->
+            <!-- タブ -->
             <v-tabs v-model="tab" class="mb-4">
               <v-tab value="student">学生</v-tab>
               <v-tab value="teacher">教師</v-tab>
             </v-tabs>
 
-            <!-- ─── エラー表示 ─── -->
+            <!-- エラー/完了メッセージ -->
             <v-alert v-if="error" type="error" variant="tonal" class="mb-4">
               {{ error }}
             </v-alert>
-
-            <!-- ─── CSV テーブル ─── -->
-            <v-data-table
-              :headers="headers"
-              :items="rows"
-              :loading="loading"
-              loading-text="読み込み中..."
-              density="comfortable"
-              class="elevation-1"
+            <v-alert
+              v-if="notice"
+              type="success"
+              variant="tonal"
+              class="mb-4"
+              @click="notice = null"
             >
-              <!-- 画像セルプレビュー -->
-              <template #item="{ item, columns }">
-                <tr>
-                  <td
-                    v-for="(col, idx) in columns"
-                    :key="`${col.key ?? 'col'}-${idx}`"
-                  >
-                    <template v-if="isImage(cellValue(item, col.key) as string)">
-                      <v-img
-                        :src="imageSrc(cellValue(item, col.key) as string)"
-                        max-width="128"
-                        max-height="128"
-                        contain
-                      />
-                    </template>
-                    <template v-else>
-                      {{ cellValue(item, col.key) }}
-                    </template>
-                  </td>
-                </tr>
-              </template>
+              {{ notice }}
+            </v-alert>
 
-              <template #no-data>データがありません</template>
-            </v-data-table>
+            <!-- グラフ一覧（1列で大きく） -->
+            <div v-for="def in chartDefsForTab" :key="def.pattern" class="mb-10">
+              <h3 class="text-subtitle-1 font-weight-bold mb-2">
+                {{ def.label }}
+              </h3>
 
-            <!-- ─── 固定グラフ表示 ─── -->
-            <v-divider class="my-6" />
-
-            <h3 class="text-subtitle-1 mb-2">集計グラフ</h3>
-
-            <div v-if="chartSrc" class="d-flex justify-center">
-              <v-img :src="chartSrc" max-width="640" class="rounded" />
+              <div class="d-flex justify-center">
+                <v-img
+                  v-if="getChartSrc(def)"
+                  :src="getChartSrc(def)"
+                  max-width="960"
+                  width="100%"
+                  class="rounded elevation-1"
+                  :alt="def.label"
+                />
+                <div v-else class="text-body-2 text-medium-emphasis">
+                  グラフ画像が見つかりません（「グラフ再生成」を押してください）
+                </div>
+              </div>
             </div>
-            <p v-else class="text-body-2">
-              表示するグラフがありません（static/admin に chart_*.png を置いてください）
-            </p>
-
-            <!-- ─── static フォルダ画像一覧（任意） ─── -->
-            <v-divider class="my-6" />
-
-            <h3 class="text-subtitle-1 mb-2">static フォルダの画像一覧</h3>
-
-            <v-row dense v-if="images.length">
-              <v-col v-for="img in images" :key="img" cols="4" sm="3" md="2">
-                <v-img :src="imageSrc(img)" aspect-ratio="1" cover class="rounded" />
-                <div class="text-caption mt-1 text-truncate">{{ img }}</div>
-              </v-col>
-            </v-row>
-            <p v-else class="text-body-2">画像はありません</p>
           </v-card-text>
 
           <v-card-actions>
             <v-spacer />
-            <v-btn
-              color="primary"
-              prepend-icon="mdi-home"
-              :to="{ name: 'Home' }"
-            >
+            <v-btn color="primary" prepend-icon="mdi-home" :to="{ name: 'Home' }">
               トップへ戻る
             </v-btn>
           </v-card-actions>
@@ -103,93 +84,112 @@ import axios from 'axios'
 
 /* ---------- 型 ---------- */
 type Tab = 'student' | 'teacher'
-type Header = { title: string; key: string }
+type ChartDef = { pattern: string; label: string }
 
-/* ---------- ルートパラメータ ---------- */
+/* ---------- ルートから管理パスワード取得（?pwd=） ---------- */
 const route = useRoute()
 const pwd = (route.query.pwd as string) ?? ''
 
-/* ---------- reactive state ---------- */
-const tab = ref<Tab>('student')
-const rows = ref<Record<string, unknown>[]>([])
-const headers = ref<Header[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
-
-/* static 画像一覧 */
-const images = ref<string[]>([])
-
-const tabLabel = computed(() =>
-  tab.value === 'student' ? '学生' : '教師',
-)
-
-/* ---------- API & static base ---------- */
+/* ---------- API base ---------- */
 const API_BASE =
   import.meta.env.VITE_API_URL ??
   `${window.location.protocol}//${window.location.hostname}:8000`
 
 const imageBase = `${API_BASE}/static/`
 
-/* ---------- 画像ヘルパ ---------- */
-function isImage(v: string) {
-  return /\.(png|jpe?g)$/i.test(v)
-}
+/* ---------- 画像ファイル一覧（/api/images） ---------- */
+const images = ref<string[]>([])
+const loadingImages = ref(false)
+
+/* ---------- メッセージ/状態 ---------- */
+const tab = ref<Tab>('student')
+const error = ref<string | null>(null)
+const notice = ref<string | null>(null)
+const rebuilding = ref(false)
+
+/* ---------- 質問 ⇄ 画像パターン ---------- */
+const studentDefs: ChartDef[] = [
+  { pattern: 'admin/chart_student_grade', label: 'あなたの学年を教えてください（大学/大学院）' },
+  { pattern: 'admin/chart_student_q1',    label: '授業終わりに自分の理解度を確認したいと思いますか？' },
+  { pattern: 'admin/chart_student_q2',    label: '教師が講義で上記のWebアプリを導入する場合、どのような懸念点がありますか？（複数選択）' },
+  { pattern: 'admin/chart_student_q3',    label: '教師が理解度が足りない場合に対策をしてくれたら嬉しいですか？' },
+]
+
+const teacherDefs: ChartDef[] = [
+  { pattern: 'admin/chart_teacher_q1_check',     label: '中間・期末試験やレポート以外で、生徒の授業理解度を確認していますか？' },
+  { pattern: 'admin/chart_teacher_q11_how',      label: 'どのような方法で把握していますか？（複数選択）' },
+  { pattern: 'admin/chart_teacher_q12_use',      label: '把握した授業理解度をどのように活用していますか？（複数選択）' },
+  { pattern: 'admin/chart_teacher_q21_want',     label: 'できれば、生徒の授業理解度を確認したいですか？' },
+  { pattern: 'admin/chart_teacher_q211_reason',  label: '現状確認していない理由（複数選択）' },
+  { pattern: 'admin/chart_teacher_q2_advantage', label: '上記のWebアプリを使う利点（複数選択）' },
+  { pattern: 'admin/chart_teacher_q3_concern',   label: '上記のWebアプリを利用する際の懸念点（複数選択）' },
+  { pattern: 'admin/chart_teacher_q4_use',       label: '上記のWebアプリを実際に使用したいと思いますか？' },
+]
+
+const chartDefsForTab = computed<ChartDef[]>(() =>
+  tab.value === 'student' ? studentDefs : teacherDefs,
+)
+
+/* ---------- 画像URL組み立て ---------- */
 function imageSrc(name: string) {
   return /^https?:\/\//.test(name) ? name : imageBase + name
 }
 
-/* null‑safe でセル値取得 */
-function cellValue(
-  row: Record<string | number | symbol, unknown>,
-  k: string | number | symbol | null,
-) {
-  return k == null ? '' : row[k]
+/* v-img の src は string | undefined を返す */
+function getChartSrc(def: ChartDef): string | undefined {
+  const hit = images.value.find(n => n.startsWith(def.pattern))
+  return hit ? `${imageSrc(hit)}?t=${cacheBuster.value}` : undefined
 }
 
-/* ---------- 固定グラフの src を計算 ---------- */
-const chartSrc = computed(() => {
-  const prefix =
-    tab.value === 'student' ? 'admin/chart_student' : 'admin/chart_teacher'
-  const file = images.value.find((n) => n.startsWith(`${prefix}`))
-  return file ? imageSrc(file) : null
-})
+/* キャッシュバスター：再生成の度に更新 */
+const cacheBuster = ref<number>(Date.now())
 
-/* ---------- CSV 取得 ---------- */
-async function load() {
-  loading.value = true
+/* ---------- /api/images 読み込み ---------- */
+async function loadImages() {
+  loadingImages.value = true
   error.value = null
   try {
-    const { data } = await axios.get(
-      `${API_BASE}/api/results/${tab.value}`,
-      { headers: { 'X-Admin-Pwd': pwd } },   // ← クエリではなくヘッダーで送る
-    )
-    rows.value = Array.isArray(data) ? data : []
-    headers.value = rows.value.length
-      ? Object.keys(rows.value[0]).map((key) => ({ title: key, key }))
-      : []
-  } catch {
-    error.value = '認証失敗またはデータ取得失敗'
-    rows.value = []
-    headers.value = []
+    const { data } = await axios.get<string[]>(`${API_BASE}/api/images`)
+    images.value = Array.isArray(data) ? data : []
+  } catch (e) {
+    error.value = '画像一覧の取得に失敗しました'
+    images.value = []
   } finally {
-    loading.value = false
+    loadingImages.value = false
   }
 }
 
-/* ---------- static 画像一覧取得 ---------- */
-async function loadImages() {
+/* ---------- グラフ再生成（/api/charts/rebuild） ---------- */
+async function rebuildCharts() {
+  rebuilding.value = true
+  error.value = null
+  notice.value = null
   try {
-    const { data } = await axios.get<string[]>(`${API_BASE}/api/images`)
-    images.value = data
-  } catch {
-    /* エラーは無視（画像なし） */
+    // 422 対策：空 JSON を明示、パスワードはヘッダー
+    await axios.post(
+      `${API_BASE}/api/charts/rebuild`,
+      {}, // ← 空でも {} を送る
+      { headers: { 'X-Admin-Pwd': pwd } },
+    )
+    cacheBuster.value = Date.now()
+    await loadImages()
+    notice.value = 'グラフ画像を再生成しました'
+  } catch (e) {
+    error.value = 'グラフ再生成に失敗しました（認証エラーまたはサーバーエラー）'
+  } finally {
+    rebuilding.value = false
   }
 }
 
 /* ---------- フック ---------- */
 onMounted(() => {
-  load()
   loadImages()
 })
-watch(tab, load)
+watch(tab, () => {
+  // タブ切替時にも最新一覧を取得（任意）
+  loadImages()
+})
+
+/* 表示ラベル */
+const tabLabel = computed(() => (tab.value === 'student' ? '学生' : '教師'))
 </script>
