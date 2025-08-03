@@ -35,3 +35,5 @@ tmp/
 backend/app/data/student_results.csv
 backend/app/data/teacher_results.csv
 backend/survey_results.csv
+
+memo/

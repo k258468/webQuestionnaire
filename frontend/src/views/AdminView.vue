@@ -161,7 +161,7 @@ async function load() {
   try {
     const { data } = await axios.get(
       `${API_BASE}/api/results/${tab.value}`,
-      { params: { pwd } },
+      { headers: { 'X-Admin-Pwd': pwd } },   // ← クエリではなくヘッダーで送る
     )
     rows.value = Array.isArray(data) ? data : []
     headers.value = rows.value.length
