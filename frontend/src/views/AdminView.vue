@@ -3,13 +3,15 @@
     <v-row justify="center">
       <v-col cols="12" md="10" lg="8">
         <v-card elevation="2">
-          <!-- タイトル + 再生成ボタン -->
+          <!-- タイトル + 再生成ボタン + パスワード入力 -->
           <v-card-title class="d-flex align-center justify-space-between">
             <span class="text-h6 font-weight-bold">
               アンケート結果（{{ tabLabel }}）
             </span>
 
             <div class="d-flex align-center ga-2">
+              
+              <!-- グラフ再生成ボタン -->
               <v-btn
                 size="small"
                 color="primary"
@@ -43,7 +45,7 @@
               {{ notice }}
             </v-alert>
 
-            <!-- グラフ一覧（1列で大きく） -->
+            <!-- グラフ一覧 -->
             <div v-for="def in chartDefsForTab" :key="def.pattern" class="mb-10">
               <h3 class="text-subtitle-1 font-weight-bold mb-2">
                 {{ def.label }}
@@ -82,69 +84,52 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
 
-/* ---------- 型 ---------- */
 type Tab = 'student' | 'teacher'
 type ChartDef = { pattern: string; label: string }
 
-/* ---------- ルートから管理パスワード取得（?pwd=） ---------- */
-const route = useRoute()
-const pwd = (route.query.pwd as string) ?? ''
-
-/* ---------- API base ---------- */
 const API_BASE =
   import.meta.env.VITE_API_URL ??
   `${window.location.protocol}//${window.location.hostname}:8000`
-
 const imageBase = `${API_BASE}/static/`
 
-/* ---------- 画像ファイル一覧（/api/images） ---------- */
-const images = ref<string[]>([])
-const loadingImages = ref(false)
-
-/* ---------- メッセージ/状態 ---------- */
 const tab = ref<Tab>('student')
 const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const rebuilding = ref(false)
+const images = ref<string[]>([])
+const loadingImages = ref(false)
+const pwd = ref('')
+const cacheBuster = ref<number>(Date.now())
 
-/* ---------- 質問 ⇄ 画像パターン ---------- */
 const studentDefs: ChartDef[] = [
   { pattern: 'admin/chart_student_grade', label: 'あなたの学年を教えてください（大学/大学院）' },
-  { pattern: 'admin/chart_student_q1',    label: '授業終わりに自分の理解度を確認したいと思いますか？' },
-  { pattern: 'admin/chart_student_q2',    label: '教師が講義で上記のWebアプリを導入する場合、どのような懸念点がありますか？（複数選択）' },
-  { pattern: 'admin/chart_student_q3',    label: '教師が理解度が足りない場合に対策をしてくれたら嬉しいですか？' },
+  { pattern: 'admin/chart_student_q1', label: '授業終わりに自分の理解度を確認したいと思いますか？' },
+  { pattern: 'admin/chart_student_q2', label: '教師が講義で上記のWebアプリを導入する場合、どのような懸念点がありますか？（複数選択）' },
+  { pattern: 'admin/chart_student_q3', label: '教師が理解度が足りない場合に対策をしてくれたら嬉しいですか？' },
 ]
-
 const teacherDefs: ChartDef[] = [
-  { pattern: 'admin/chart_teacher_q1_check',     label: '中間・期末試験やレポート以外で、生徒の授業理解度を確認していますか？' },
-  { pattern: 'admin/chart_teacher_q11_how',      label: 'どのような方法で把握していますか？（複数選択）' },
-  { pattern: 'admin/chart_teacher_q12_use',      label: '把握した授業理解度をどのように活用していますか？（複数選択）' },
-  { pattern: 'admin/chart_teacher_q21_want',     label: 'できれば、生徒の授業理解度を確認したいですか？' },
-  { pattern: 'admin/chart_teacher_q211_reason',  label: '現状確認していない理由（複数選択）' },
+  { pattern: 'admin/chart_teacher_q1_check', label: '中間・期末試験やレポート以外で、生徒の授業理解度を確認していますか？' },
+  { pattern: 'admin/chart_teacher_q11_how', label: 'どのような方法で把握していますか？（複数選択）' },
+  { pattern: 'admin/chart_teacher_q12_use', label: '把握した授業理解度をどのように活用していますか？（複数選択）' },
+  { pattern: 'admin/chart_teacher_q21_want', label: 'できれば、生徒の授業理解度を確認したいですか？' },
+  { pattern: 'admin/chart_teacher_q211_reason', label: '現状確認していない理由（複数選択）' },
   { pattern: 'admin/chart_teacher_q2_advantage', label: '上記のWebアプリを使う利点（複数選択）' },
-  { pattern: 'admin/chart_teacher_q3_concern',   label: '上記のWebアプリを利用する際の懸念点（複数選択）' },
-  { pattern: 'admin/chart_teacher_q4_use',       label: '上記のWebアプリを実際に使用したいと思いますか？' },
+  { pattern: 'admin/chart_teacher_q3_concern', label: '上記のWebアプリを利用する際の懸念点（複数選択）' },
+  { pattern: 'admin/chart_teacher_q4_use', label: '上記のWebアプリを実際に使用したいと思いますか？' },
 ]
 
-const chartDefsForTab = computed<ChartDef[]>(() =>
+const chartDefsForTab = computed(() =>
   tab.value === 'student' ? studentDefs : teacherDefs,
 )
 
-/* ---------- 画像URL組み立て ---------- */
 function imageSrc(name: string) {
   return /^https?:\/\//.test(name) ? name : imageBase + name
 }
-
-/* v-img の src は string | undefined を返す */
 function getChartSrc(def: ChartDef): string | undefined {
   const hit = images.value.find(n => n.startsWith(def.pattern))
   return hit ? `${imageSrc(hit)}?t=${cacheBuster.value}` : undefined
 }
 
-/* キャッシュバスター：再生成の度に更新 */
-const cacheBuster = ref<number>(Date.now())
-
-/* ---------- /api/images 読み込み ---------- */
 async function loadImages() {
   loadingImages.value = true
   error.value = null
@@ -159,17 +144,15 @@ async function loadImages() {
   }
 }
 
-/* ---------- グラフ再生成（/api/charts/rebuild） ---------- */
 async function rebuildCharts() {
   rebuilding.value = true
   error.value = null
   notice.value = null
   try {
-    // 422 対策：空 JSON を明示、パスワードはヘッダー
     await axios.post(
       `${API_BASE}/api/charts/rebuild`,
-      {}, // ← 空でも {} を送る
-      { headers: { 'X-Admin-Pwd': pwd } },
+      {},
+      { headers: { 'X-Admin-Pwd': pwd.value } },
     )
     cacheBuster.value = Date.now()
     await loadImages()
@@ -181,15 +164,18 @@ async function rebuildCharts() {
   }
 }
 
-/* ---------- フック ---------- */
+const route = useRoute()
 onMounted(() => {
+  const p = route.query.pwd
+  if (typeof p === 'string') {
+    pwd.value = p
+  }
   loadImages()
 })
-watch(tab, () => {
-  // タブ切替時にも最新一覧を取得（任意）
-  loadImages()
-})
+watch(tab, () => loadImages())
 
-/* 表示ラベル */
 const tabLabel = computed(() => (tab.value === 'student' ? '学生' : '教師'))
 </script>
+
+
+
