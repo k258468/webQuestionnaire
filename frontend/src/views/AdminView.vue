@@ -3,14 +3,13 @@
     <v-row justify="center">
       <v-col cols="12" md="10" lg="8">
         <v-card elevation="2">
-          <!-- タイトル + 再生成ボタン + パスワード入力 -->
+          <!-- タイトル + 再生成ボタン + CSVダウンロードボタン -->
           <v-card-title class="d-flex align-center justify-space-between">
             <span class="text-h6 font-weight-bold">
               アンケート結果（{{ tabLabel }}）
             </span>
 
             <div class="d-flex align-center ga-2">
-              
               <!-- グラフ再生成ボタン -->
               <v-btn
                 size="small"
@@ -20,6 +19,17 @@
                 @click="rebuildCharts"
               >
                 グラフ再生成
+              </v-btn>
+
+              <!-- CSVダウンロードボタン -->
+              <v-btn
+                size="small"
+                color="secondary"
+                prepend-icon="mdi-download"
+                @click="downloadCSV"
+                class="ms-2"
+              >
+                CSVダウンロード
               </v-btn>
             </div>
           </v-card-title>
@@ -164,6 +174,46 @@ async function rebuildCharts() {
   }
 }
 
+async function downloadCSV() {
+  error.value = null
+  notice.value = null
+  try {
+    const userType = tab.value
+    const res = await axios.get(`${API_BASE}/api/results/${userType}`, {
+      headers: { 'X-Admin-Pwd': pwd.value },
+      responseType: 'json',
+    })
+    const csv = convertToCSV(res.data)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.setAttribute('download', `${userType}_results.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    notice.value = 'CSVファイルのダウンロードが完了しました。'
+  } catch (e) {
+    error.value = 'CSVのダウンロードに失敗しました。認証パスワードを確認してください。'
+  }
+}
+
+function convertToCSV(objArray: object[]) {
+  if (!objArray || objArray.length === 0) return ''
+  const keys = Object.keys(objArray[0])
+  const csvRows = [keys.join(',')]
+  for (const obj of objArray) {
+    const row = keys.map(k => {
+      let val = obj[k] ?? ''
+      if (typeof val === 'string' && val.includes(',')) {
+        val = `"${val.replace(/"/g, '""')}"`
+      }
+      return val
+    })
+    csvRows.push(row.join(','))
+  }
+  return csvRows.join('\n')
+}
+
 const route = useRoute()
 onMounted(() => {
   const p = route.query.pwd
@@ -176,6 +226,3 @@ watch(tab, () => loadImages())
 
 const tabLabel = computed(() => (tab.value === 'student' ? '学生' : '教師'))
 </script>
-
-
-

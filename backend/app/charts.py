@@ -4,7 +4,7 @@ import csv
 import os
 from collections import Counter
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Callable
 from matplotlib.ticker import MaxNLocator
 
 import matplotlib
@@ -24,12 +24,9 @@ TEACHER_CSV  = DATA_DIR / "teacher_results.csv"
 
 # ===== 日本語フォント（自動設定）=====
 def _pick_jp_font() -> fm.FontProperties | None:
-    # 1) Debian + fonts-noto-cjk を想定
     fixed = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
     if Path(fixed).exists():
         return fm.FontProperties(fname=fixed)
-
-    # 2) ファミリー名で探索
     families = ["Noto Sans CJK JP", "Noto Sans CJK", "Noto Sans JP",
                 "IPAexGothic", "IPAGothic", "Meiryo"]
     for fam in families:
@@ -39,8 +36,6 @@ def _pick_jp_font() -> fm.FontProperties | None:
                 return fm.FontProperties(fname=path)
         except Exception:
             pass
-
-    # 3) ディスク走査
     for root in ("/usr/share/fonts", "/usr/local/share/fonts"):
         p = Path(root)
         if not p.exists():
@@ -82,13 +77,13 @@ TCH_KEYS = {
 STU_SKIP: set[str] = set()
 TCH_SKIP: set[str] = {"確認したくない理由", "導入しない理由"}
 
-# ; 区切りの多選択列
+# ; 区切りの多選択列（これ以外は単一選択＝円グラフ）
 MULTI_VAL_COLUMNS = {
     "懸念（複数）",
     "把握手段", "活用方法", "確認したい理由", "利点", "懸念",
 }
 
-# ===== 値→日本語ラベルのマップ =====
+# ===== 値→日本語ラベルのマップ（表示順は辞書定義順） =====
 LABEL_MAP = {
     "student": {
         "grade": {
@@ -121,7 +116,6 @@ LABEL_MAP = {
             "no_method":"確認手段がない","no_time":"作成/採点の時間がない",
             "too_many":"受講者数が多すぎる","other":"その他",
         },
-        # 利点：想定コード + 誤混入しがちな懸念コードも日本語化
         "q2_advantage": {
             "no_test":"テストやレポート作成なしで確認できる",
             "many_overview":"受講者が多くても一目で把握できる",
@@ -154,23 +148,24 @@ def _read_rows(csv_path: Path) -> list[dict]:
     with csv_path.open(newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
 
-def _split_semicolon(values: Iterable[str]) -> Counter:
+def _count_series(
+    values: Iterable[str],
+    multi: bool,
+    normalizer: Callable[[str], str] | None = None,
+) -> Counter:
     c = Counter()
-    for v in values:
-        if not v:
+    for raw in values:
+        if not raw:
             continue
-        for part in str(v).split(";"):
-            part = part.strip()
-            if part:
-                c[part] += 1
-    return c
-
-def _count_categorical(values: Iterable[str]) -> Counter:
-    c = Counter()
-    for v in values:
-        v = (v or "").strip()
-        if v:
-            c[v] += 1
+        parts = str(raw).split(";") if multi else [str(raw)]
+        for p in parts:
+            v = p.strip()
+            if not v:
+                continue
+            if normalizer:
+                v = normalizer(v)
+            if v:
+                c[v] += 1
     return c
 
 def _remap_counter(counter: Counter, label_map: dict[str, str]) -> Counter:
@@ -179,35 +174,112 @@ def _remap_counter(counter: Counter, label_map: dict[str, str]) -> Counter:
         out[label_map.get(k, k)] += v
     return out
 
-def _bar(counter: Counter, save_to: Path):
-    """カテゴリ頻度の棒グラフを保存（タイトル無し／日本語ラベル対応、y軸は整数目盛り）"""
-    save_to.parent.mkdir(parents=True, exist_ok=True)
-
+def _order_by_labelmap(counter: Counter, label_map: dict[str, str] | None):
+    """表示順を label_map の定義順に合わせる（存在するもののみ）"""
     if not counter:
-        fig = plt.figure(figsize=(5, 3))
+        return [], []
+    if not label_map:
+        labels, counts = zip(*counter.most_common())
+        return list(labels), list(counts)
+    ordered_labels: list[str] = []
+    ordered_counts: list[int] = []
+    jp_order = [v for v in label_map.values()]
+    for lab in jp_order:
+        if lab in counter:
+            ordered_labels.append(lab)
+            ordered_counts.append(counter[lab])
+    for lab, cnt in counter.items():
+        if lab not in ordered_labels:
+            ordered_labels.append(lab)
+            ordered_counts.append(cnt)
+    return ordered_labels, ordered_counts
+
+# ===== 正規化（丸め） =====
+def _make_normalizer(role: str, key: str) -> Callable[[str], str] | None:
+    # 学生
+    if role == "student":
+        if key == "q2":
+            # other:xxx → other
+            return lambda s: "other" if s.strip().startswith("other") else s.strip()
+        if key == "q3":
+            # 「いいえ」起点は全部「いいえ」に（いいえ:..., いいえ理由, 等）
+            def _n(s: str) -> str:
+                t = s.strip()
+                return "いいえ" if ("いいえ" in t) else t
+            return _n
+
+    # 教員
+    if role == "teacher":
+        # 多選択は other:xxx → other
+        if key in {"q11_how", "q12_use", "q211_reason", "q2_advantage", "q3_concern"}:
+            return lambda s: "other" if s.strip().startswith("other") else s.strip()
+
+        if key == "q21_want":
+            # 「したくない」や「したくない理由…」を全て「したくない」へ
+            def _n(s: str) -> str:
+                t = s.strip()
+                if "したくない" in t:
+                    return "したくない"
+                if "したい" in t:
+                    return "したい"
+                return t
+            return _n
+
+        if key == "q4_use":
+            # 「思わない」や「思わない理由…」を全て「思わない」へ
+            def _n(s: str) -> str:
+                t = s.strip()
+                if "思わない" in t:
+                    return "思わない"
+                if "思う" in t:
+                    return "思う"
+                return t
+            return _n
+
+    return None
+
+# ===== 描画 =====
+def _bar(labels: list[str], counts: list[int], save_to: Path):
+    """棒グラフ（日本語フォント／y軸整数）"""
+    save_to.parent.mkdir(parents=True, exist_ok=True)
+    if not labels:
+        fig = plt.figure(figsize=(6.8, 4.6))
         plt.axis("off")
         fig.savefig(save_to, dpi=160, bbox_inches="tight")
         plt.close(fig)
         return
-
-    labels, counts = zip(*counter.most_common())
-
     fig = plt.figure(figsize=(6.8, 4.6))
     ax = fig.add_subplot(111)
     ax.bar(range(len(labels)), counts)
     ax.set_xticks(range(len(labels)))
-
-    # x軸ラベル（日本語フォント）
     if _JP_FP is not None:
         ax.set_xticklabels(labels, rotation=30, ha="right", fontproperties=_JP_FP)
     else:
         ax.set_xticklabels(labels, rotation=30, ha="right")
-
-    # ← y軸は整数のみ
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     ax.set_ylim(0, max(counts) if max(counts) > 0 else 1)
-
     ax.tick_params(axis='y', which='both', length=0)
+    fig.tight_layout()
+    fig.savefig(save_to, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+
+def _pie(labels: list[str], counts: list[int], save_to: Path):
+    """円グラフ（日本語フォント／小数なし%表示）"""
+    save_to.parent.mkdir(parents=True, exist_ok=True)
+    if not labels:
+        fig = plt.figure(figsize=(6.8, 4.6))
+        plt.axis("off")
+        fig.savefig(save_to, dpi=160, bbox_inches="tight")
+        plt.close(fig)
+        return
+    fig = plt.figure(figsize=(6.8, 4.6))
+    ax = fig.add_subplot(111)
+    autopct = '%.0f%%'
+    kw = {}
+    if _JP_FP is not None:
+        kw["textprops"] = {"fontproperties": _JP_FP}
+    ax.pie(counts, labels=labels, autopct=autopct, startangle=90, counterclock=False, **kw)
+    ax.axis('equal')
     fig.tight_layout()
     fig.savefig(save_to, dpi=160, bbox_inches="tight")
     plt.close(fig)
@@ -222,16 +294,21 @@ def build_student_charts() -> list[dict]:
 
     out: list[dict] = []
     for col, key in STU_KEYS.items():
-        if col in STU_SKIP or col not in rows[0]:
+        if col not in rows[0] or col in STU_SKIP:
             continue
-        series  = [r.get(col, "") for r in rows]
-        counter = _split_semicolon(series) if col in MULTI_VAL_COLUMNS else _count_categorical(series)
-        # 日本語ラベルへ置換
+        multi = col in MULTI_VAL_COLUMNS
+        normalizer = _make_normalizer("student", key)
+        series = [r.get(col, "") for r in rows]
+        counter = _count_series(series, multi=multi, normalizer=normalizer)
         m = LABEL_MAP["student"].get(key)
         if m:
             counter = _remap_counter(counter, m)
+        labels, counts = _order_by_labelmap(counter, m)
         out_path = ADMIN_DIR / f"chart_student_{key}.png"
-        _bar(counter, out_path)
+        if multi:
+            _bar(labels, counts, out_path)
+        else:
+            _pie(labels, counts, out_path)
         out.append({"col": col, "key": key, "file": f"admin/{out_path.name}"})
     return out
 
@@ -245,16 +322,21 @@ def build_teacher_charts() -> list[dict]:
 
     out: list[dict] = []
     for col, key in TCH_KEYS.items():
-        if col in TCH_SKIP or col not in rows[0]:
+        if col not in rows[0] or col in TCH_SKIP:
             continue
-        series  = [r.get(col, "") for r in rows]
-        counter = _split_semicolon(series) if col in MULTI_VAL_COLUMNS else _count_categorical(series)
-        # 日本語ラベルへ置換
+        multi = col in MULTI_VAL_COLUMNS
+        normalizer = _make_normalizer("teacher", key)
+        series = [r.get(col, "") for r in rows]
+        counter = _count_series(series, multi=multi, normalizer=normalizer)
         m = LABEL_MAP["teacher"].get(key)
         if m:
             counter = _remap_counter(counter, m)
+        labels, counts = _order_by_labelmap(counter, m)
         out_path = ADMIN_DIR / f"chart_teacher_{key}.png"
-        _bar(counter, out_path)
+        if multi:
+            _bar(labels, counts, out_path)
+        else:
+            _pie(labels, counts, out_path)
         out.append({"col": col, "key": key, "file": f"admin/{out_path.name}"})
     return out
 
